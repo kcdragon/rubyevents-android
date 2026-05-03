@@ -13,11 +13,9 @@ import dev.hotwire.core.bridge.BridgeDelegate
 import dev.hotwire.core.bridge.Message
 import dev.hotwire.navigation.destinations.HotwireDestination
 import dev.hotwire.navigation.fragments.HotwireFragment
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.rubyevents.app.R
@@ -32,36 +30,35 @@ class OAuthComponent(
         get() = bridgeDelegate.destination.fragment as HotwireFragment
 
     private var pendingSignIn: Message? = null
-    private var collectorJob: Job? = null
 
     override fun onReceive(message: Message) {
         Log.d(TAG, "onReceive event=${message.event} jsonData=${message.jsonData}")
         when (message.event) {
             "signIn" -> handleSignIn(message)
-            "disconnect" -> handleDisconnect()
+            "disconnect" -> { pendingSignIn = null }
             else -> Log.w(TAG, "Unknown event: ${message.event}")
         }
     }
 
+    override fun onStart() {
+        fragment.viewLifecycleOwner.lifecycleScope.launch {
+            fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                callbacks.collect { onRedirect(it) }
+            }
+        }
+    }
+
     private fun handleSignIn(message: Message) {
-        val data = message.data<MessageData>()
-        val path = data?.authorizationPath ?: return
+        val path = message.data<MessageData>()?.authorizationPath ?: return
         val url = resolveAgainstBaseUrl(path)
         Log.d(TAG, "handleSignIn url=$url")
         pendingSignIn = message
         clearCallbacks()
-        ensureCollector()
         launchCustomTab(url)
     }
 
     private fun resolveAgainstBaseUrl(path: String): String {
         return Router.startURL.trimEnd('/') + (if (path.startsWith("/")) path else "/$path")
-    }
-
-    private fun handleDisconnect() {
-        pendingSignIn = null
-        collectorJob?.cancel()
-        collectorJob = null
     }
 
     private fun launchCustomTab(url: String) {
@@ -76,15 +73,6 @@ class OAuthComponent(
             .setShowTitle(true)
             .build()
             .launchUrl(context, Uri.parse(url))
-    }
-
-    private fun ensureCollector() {
-        if (collectorJob?.isActive == true) return
-        collectorJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
-            fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                callbacks.collectLatest { onRedirect(it) }
-            }
-        }
     }
 
     private fun onRedirect(uri: Uri) {
