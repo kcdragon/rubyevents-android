@@ -49,7 +49,7 @@ class OAuthComponent(
     }
 
     private fun handleSignIn(message: Message) {
-        val path = message.data<MessageData>()?.authorizationPath ?: return
+        val path = message.data<MessageData>()?.startPath ?: return
         val url = resolveAgainstBaseUrl(path)
         Log.d(TAG, "handleSignIn url=$url")
         pendingSignIn = message
@@ -85,7 +85,7 @@ class OAuthComponent(
     }
 
     @Serializable
-    data class MessageData(val authorizationPath: String? = null)
+    data class MessageData(val startPath: String? = null)
 
     @Serializable
     data class SuccessData(val token: String? = null)
